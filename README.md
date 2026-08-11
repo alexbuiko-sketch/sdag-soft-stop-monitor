@@ -91,6 +91,9 @@ The engine requires zero model re-training and works at the inference layer.
 
 Raw execution logs for all 50 test prompts are available in this repository for token-level inspection:
 * File: `monitoring_v24_50prompts_results.json`
+### 📊 Benchmark Execution Artifacts (Llama 3 8B — 105 runs)
+Raw dataset with Llama 3 8B baseline vs. Monitoring Layer execution metrics, token throughput, and latency logs:
+* [Download `llama3_1_8b_baseline_vs_sdag_105runs.json`](https://logs.verify-sdag.com/llama3_1_8b_baseline_vs_sdag_105runs.json)
 
 ---
 
