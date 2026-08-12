@@ -37,7 +37,7 @@ High-throughput LLM deployments frequently suffer from **trailing latency overhe
 ]
 
 Here is the structured JSON list containing 8 standard HTTP status codes along with their brief descriptions as requested. Let me know if you need any additional codes included!
-
+```
 ## SDAG-Line Output (Monitoring Layer Protocol)
 
 * **Total Generated Tokens:** `380`[cite: 1]
@@ -56,7 +56,7 @@ Here is the structured JSON list containing 8 standard HTTP status codes along w
   {"code": 404, "status": "Not Found", "meaning": "The origin server did not find a current representation for the target resource or is not willing to disclose that one exists."},
   {"code": 500, "status": "Internal Server Error", "meaning": "The server encountered an unexpected condition that prevented it from fulfilling the request."}
 ]
-
+```
 ## Performance Summary & Key Findings
 
 | Metric / Event | Baseline | SDAG-Line | Net Difference |
@@ -78,12 +78,7 @@ Based on the delta measured in Run ID: 21[cite: 1], scaling this protocol across
 * **Cumulative Compute Time Saved:** **~187,000 seconds** (**~51.9 hours**) of active GPU execution time saved.
 * **Throughput Optimization:** Reduces KV-cache allocation footprint, freeing up execution slots for concurrent inference streams and lowering overall cloud infrastructure spend.
 
-### Key Technical Takeaways:
-1. **Dead Compute Elimination:** Halting execution immediately after payload completion trimmed 67 redundant conversational tokens[cite: 1].
-2. **Deterministic Graceful Exit:** Allowing a short 2-token buffer prevents word or punctuation truncation, ensuring zero JSON parsing errors in production pipelines.
-3. **Infrastructure Impact:** At scale, cutting ~1.87s per request[cite: 1] significantly lowers VRAM retention time and increases KV-cache turnover on inference nodes.
-
-Full Benchmark & Contact Information
+### Full Benchmark & Contact Information
 Benchmark Logs: The complete dataset spanning 105 benchmark runs across baseline and Monitoring Layer configurations is available for independent verification at [logs.verify-sdag.com.](https://logs.verify-sdag.com/llama3_1_8b_baseline_vs_sdag_105runs.json)
 
 Technical Contact: For questions regarding integration protocols, hardware benchmarks, or research collaboration, please reach out via email: alex.buiko@gmail.com.
