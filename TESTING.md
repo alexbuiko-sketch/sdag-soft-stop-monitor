@@ -38,7 +38,8 @@ curl -N -X POST "https://sdag-gate.alex-buiko.workers.dev/v1/chat/completions" \
   }'
 
 ```
-
+Multi-GPU Cluster Validation
+The gateway architecture is fully transparent to your underlying topology. You can route traffic through the SDAG proxy to benchmark performance not only on single-GPU pods but also across multi-GPU clusters running Tensor Parallelism (TP) or Pipeline Parallelism (PP). Simply point the X-Target-URL to your multi-GPU inference cluster endpoint
 ---
 
 ## 4. What the Gateway Monitors & Controls
