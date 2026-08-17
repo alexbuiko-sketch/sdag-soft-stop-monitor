@@ -98,6 +98,7 @@ Raw dataset with Llama 3 8B baseline vs. Monitoring Layer execution metrics, tok
 ---
 
 ## 🤝 Enterprise Acquisition & NDA Demonstration
+Free Demo Period: Active until August 31, 2026 (Token authorization is temporarily disabled; any placeholder string can be used). More on Testing.md
 
 The core implementation, complete C++/Python integration modules, and full benchmark suites are available under **Commercial Acquisition / Licensing Terms**.
 
