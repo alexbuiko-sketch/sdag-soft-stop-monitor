@@ -1,51 +1,204 @@
-# Monitoring Layer / SDAG Gateway — Integration & Testing Guide
+# LiveStop Monitoring Layer — Testing Guide
 
-This guide provides instructions for connecting to the **SDAG (Systematic Defect Awareness & Guidance)** proxy gateway to test real-time entropy tracking, byte-level validation, and compute optimization streams.
+This guide provides instructions for connecting to the **LiveStop v0.9-cf** proxy
+gateway to test real-time soft-stop inference optimization: entropy drift detection,
+structural boundary tracking (lists / tables / JSON), water-pattern filtering,
+and GPU compute reclamation via upstream connection abort.
 
 ---
 
 ## 1. Connection Parameters
 
-* **Gateway Endpoint:** `[https://sdag-gate.alex-buiko.workers.dev/v1/chat/completions](https://sdag-gate.alex-buiko.workers.dev/v1/chat/completions)`
-* **HTTP Method:** `POST`
-* **Demo Period:** Active until **August 31, 2026** *(Token authorization is temporarily disabled; any placeholder string can be used).*
+- **Gateway Endpoint:** `https://sdag-gate.alex-buiko.workers.dev/v1/chat/completions`
+- **Health Endpoint:** `https://sdag-gate.alex-buiko.workers.dev/health`
+- **HTTP Method:** `POST`
+- **Demo Period:** Active until **August 31, 2026**
+  *(Token authorization is temporarily disabled; any placeholder string can be used.)*
 
 ---
 
 ## 2. Required Headers
 
-* `Content-Type`: `application/json`
-* `Authorization`: `Bearer demo` *(Any placeholder token is accepted during the demo period)*
-* `X-Target-URL`: `https://<YOUR_GPU_HOST_OR_POD>/v1/chat/completions` *(URL of your active vLLM, SGLang, or OpenAI-compatible inference endpoint)*
+| Header | Value | Notes |
+|---|---|---|
+| `Content-Type` | `application/json` | Required |
+| `Authorization` | `Bearer demo` | Any placeholder token accepted during demo |
+| `X-Target-URL` | `https://<YOUR_GPU_HOST>/v1/chat/completions` | Your active vLLM / SGLang / TGI / OpenAI-compatible endpoint |
+
+> **Note:** The worker forces `stream: true`, `logprobs: true`, and
+> `top_logprobs: 5` on the upstream request automatically. You do not need
+> to set these in the body.
 
 ---
 
-## 3. Quick Test (cURL)
+## 3. Health Check
 
-Execute the following command in your terminal to verify the stream:
+Verify the worker is alive before running tests:
 
 ```bash
+curl https://sdag-gate.alex-buiko.workers.dev/health
+
+Expected response:
+
+
+{"status":"ok","version":"v0.9-cf"}
+## 4. Quick Test (cURL)
+Execute the following command to verify the stream and soft-stop behaviour:
+
+
 curl -N -X POST "https://sdag-gate.alex-buiko.workers.dev/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer demo" \
   -H "X-Target-URL: https://<YOUR_GPU_HOST_OR_POD>/v1/chat/completions" \
   -d '{
-    "model": "meta-llama/Llama-3.1-8B-Instruct",
-    "messages": [{"role": "user", "content": "Ping"}],
-    "stream": true,
-    "logprobs": true,
-    "top_logprobs": 3
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "messages": [
+      {"role": "user", "content": "List 5 key features of Python 3.12."}
+    ],
+    "max_tokens": 512,
+    "temperature": 0
   }'
+The -N flag disables curl output buffering so you see the SSE stream in real time.
 
-```
-Multi-GPU Cluster Validation
-The gateway architecture is fully transparent to your underlying topology. You can route traffic through the SDAG proxy to benchmark performance not only on single-GPU pods but also across multi-GPU clusters running Tensor Parallelism (TP) or Pipeline Parallelism (PP). Simply point the X-Target-URL to your multi-GPU inference cluster endpoint
----
+5. Test Prompts by Category
+Use these prompts to exercise each detection path:
 
-## 4. What the Gateway Monitors & Controls
+Category	Prompt	Expected stop_reason
+lists	List 5 key features of Python 3.12.	structure_closed_boundary
+lists	Give 8 methods for optimizing database queries.	structure_closed_boundary
+lists	Provide 10 best practices for REST API design.	structure_closed_boundary
+tables	Create a table comparing SQL vs NoSQL across 7 metrics.	structure_closed_boundary
+tables	Compare Docker vs Kubernetes across 5 features in a table.	structure_closed_boundary
+guides	Explain CI/CD setup in 6 steps.	structure_closed_boundary
+guides	Provide a 7-step guide to implement OAuth2 authentication.	structure_closed_boundary
+prose	What is the CAP theorem in distributed systems?	(no stop — model finishes naturally)
+water	Explain Agile development and be very verbose and repetitive.	water_pattern_and_low_entropy
+6. Reading the Response
+6a. Normal completion (no soft-stop)
+The stream ends with the standard vLLM finish event:
 
-During the test, the monitoring layer transparently intercepts and evaluates the Server-Sent Events (SSE) stream:
 
-1. **Shannon Entropy Calculation:** Evaluates model confidence in real-time based on `top_logprobs`.
-2. **Structural Integrity Check:** Monitors syntax boundaries (JSON/array open/close states) to detect degeneration or hallucination loops.
-3. **Soft-Stop & Dead Compute Prevention:** Automatically triggers an early exit (`monitoring_soft_stop`) upon detecting an entropy flatline and structural completion, sending an upstream abort signal to free up GPU KV-cache resources instantly.
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+6b. Soft-stop triggered
+The stream ends with a metrics packet followed by [DONE]:
+
+
+data: {"choices":[{"delta":{},"finish_reason":"monitoring_soft_stop"}],"monitoring_metrics":{...}}
+
+data: [DONE]
+The monitoring_metrics object contains:
+
+Field	Type	Description
+tokens_evaluated	int	Total tokens processed before stop
+stop_at_token	int	Token index where the stop was triggered
+stop_reason	string	structure_closed_boundary or water_pattern_and_low_entropy
+grace_exit_reason	string	boundary, countdown, or boundary_lookahead
+grace_steps_spent	int	Tokens generated during the grace window
+internal_errors	int	Internal evaluator errors (should be 0)
+unclosed_blocked	bool	true if a stop was blocked by an unclosed container
+water_match_pos	int|null	Character position of the water pattern match
+early_exit	bool	Always true when soft-stop fires
+6c. Response headers
+Header	Value
+X-Monitoring-Engine	v0.9-cf
+X-Target-Items	Extracted item count from prompt (or null)
+X-Request-Mode	chat or table
+7. JavaScript Test Client
+
+const WORKER_URL = "https://sdag-gate.alex-buiko.workers.dev/v1/chat/completions";
+const GPU_URL    = "https://<YOUR_GPU_HOST_OR_POD>/v1/chat/completions";
+
+async function testSoftStop(prompt) {
+  const response = await fetch(WORKER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": "Bearer demo",
+      "X-Target-URL":  GPU_URL,
+    },
+    body: JSON.stringify({
+      model: "Qwen/Qwen2.5-7B-Instruct",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 512,
+      temperature: 0,
+    }),
+  });
+
+  const reader  = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText  = "";
+  let metrics   = null;
+  let finishReason = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    for (const line of decoder.decode(value, { stream: true }).split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
+
+      try {
+        const json = JSON.parse(trimmed.slice(6));
+        fullText += json.choices?.[0]?.delta?.content || "";
+
+        if (json.monitoring_metrics) metrics = json.monitoring_metrics;
+        if (json.choices?.[0]?.finish_reason) finishReason = json.choices[0].finish_reason;
+      } catch (_) {}
+    }
+  }
+
+  console.log("=== Text ===\n", fullText);
+  console.log("=== finish_reason ===", finishReason);
+  if (metrics) {
+    console.log("=== Soft-Stop Metrics ===");
+    console.table(metrics);
+  }
+}
+
+// Run tests
+testSoftStop("List 5 key features of Python 3.12.");
+testSoftStop("Create a table comparing SQL vs NoSQL across 7 metrics.");
+testSoftStop("What is the CAP theorem?");
+8. Supported Backends
+The worker proxies to any OpenAI-compatible inference server:
+
+Backend	Example X-Target-URL
+vLLM	http://<host>:8000/v1/chat/completions
+SGLang	http://<host>:30000/v1/chat/completions
+TGI	http://<host>:8080/v1/chat/completions
+RunPod	https://<pod-id>-8888.proxy.runpod.net/v1/chat/completions
+OpenAI	https://api.openai.com/v1/chat/completions
+Requirement: The backend must support logprobs in streaming mode.
+vLLM ≥ 0.4, SGLang ≥ 0.2, and OpenAI API all support this.
+
+9. Troubleshooting
+Symptom	Cause	Fix
+400: Missing 'X-Target-URL' header	Header not sent	Add X-Target-URL with your GPU endpoint
+405: Monitoring Layer expects POST	Wrong HTTP method	Use POST
+Upstream returns 404	Wrong path in X-Target-URL	Ensure URL ends with /v1/chat/completions
+No monitoring_metrics in response	Soft-stop did not trigger	Use a list/table prompt; prose prompts finish naturally
+internal_errors > 0	Evaluator exception	Check the prompt for unusual encoding; report the issue
+Stream cuts immediately	GPU server unreachable	Verify X-Target-URL is accessible from the public internet
+finish_reason: "length" with no stop	Baseline hit max_tokens	Increase max_tokens or use a shorter prompt
+10. What the Worker Does (Technical Summary)
+
+Client ──POST──▶ Cloudflare Worker ──POST──▶ vLLM / SGLang / TGI
+                      │
+                      ├── Intercepts SSE stream token-by-token
+                      ├── Tracks: lists, tables, JSON, code fences, inline code
+                      ├── Computes: self-normalized entropy z-score (MAD-based)
+                      ├── Detects: water patterns, structural boundaries
+                      ├── Applies: grace window + one-token lookahead
+                      │
+                      ├── On soft-stop:
+                      │     ├── Sends metrics packet to client
+                      │     ├── Sends data: [DONE]
+                      │     └── Aborts upstream HTTP connection (frees KV-cache)
+                      │
+                      └── On natural finish:
+                            └── Passes through unchanged
+
+
