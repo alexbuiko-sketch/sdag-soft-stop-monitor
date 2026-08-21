@@ -42,6 +42,7 @@ Expected response:
 
 
 {"status":"ok","version":"v0.9-cf"}
+---
 ## 4. Quick Test (cURL)
 Execute the following command to verify the stream and soft-stop behaviour:
 
@@ -59,7 +60,7 @@ curl -N -X POST "https://sdag-gate.alex-buiko.workers.dev/v1/chat/completions" \
     "temperature": 0
   }'
 The -N flag disables curl output buffering so you see the SSE stream in real time.
-
+---
 5. Test Prompts by Category
 Use these prompts to exercise each detection path:
 
@@ -73,7 +74,8 @@ guides	Explain CI/CD setup in 6 steps.	structure_closed_boundary
 guides	Provide a 7-step guide to implement OAuth2 authentication.	structure_closed_boundary
 prose	What is the CAP theorem in distributed systems?	(no stop — model finishes naturally)
 water	Explain Agile development and be very verbose and repetitive.	water_pattern_and_low_entropy
-6. Reading the Response
+---
+##6. Reading the Response
 6a. Normal completion (no soft-stop)
 The stream ends with the standard vLLM finish event:
 
@@ -105,7 +107,8 @@ Header	Value
 X-Monitoring-Engine	v0.9-cf
 X-Target-Items	Extracted item count from prompt (or null)
 X-Request-Mode	chat or table
-7. JavaScript Test Client
+---
+##7. JavaScript Test Client
 
 const WORKER_URL = "https://sdag-gate.alex-buiko.workers.dev/v1/chat/completions";
 const GPU_URL    = "https://<YOUR_GPU_HOST_OR_POD>/v1/chat/completions";
@@ -162,7 +165,8 @@ async function testSoftStop(prompt) {
 testSoftStop("List 5 key features of Python 3.12.");
 testSoftStop("Create a table comparing SQL vs NoSQL across 7 metrics.");
 testSoftStop("What is the CAP theorem?");
-8. Supported Backends
+---
+##8. Supported Backends
 The worker proxies to any OpenAI-compatible inference server:
 
 Backend	Example X-Target-URL
@@ -173,8 +177,8 @@ RunPod	https://<pod-id>-8888.proxy.runpod.net/v1/chat/completions
 OpenAI	https://api.openai.com/v1/chat/completions
 Requirement: The backend must support logprobs in streaming mode.
 vLLM ≥ 0.4, SGLang ≥ 0.2, and OpenAI API all support this.
-
-9. Troubleshooting
+---
+##9. Troubleshooting
 Symptom	Cause	Fix
 400: Missing 'X-Target-URL' header	Header not sent	Add X-Target-URL with your GPU endpoint
 405: Monitoring Layer expects POST	Wrong HTTP method	Use POST
@@ -183,7 +187,8 @@ No monitoring_metrics in response	Soft-stop did not trigger	Use a list/table pro
 internal_errors > 0	Evaluator exception	Check the prompt for unusual encoding; report the issue
 Stream cuts immediately	GPU server unreachable	Verify X-Target-URL is accessible from the public internet
 finish_reason: "length" with no stop	Baseline hit max_tokens	Increase max_tokens or use a shorter prompt
-10. What the Worker Does (Technical Summary)
+---
+##10. What the Worker Does (Technical Summary)
 
 Client ──POST──▶ Cloudflare Worker ──POST──▶ vLLM / SGLang / TGI
                       │
